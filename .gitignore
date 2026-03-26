@@ -1,0 +1,15 @@
+# Variables de entorno
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Docker
+*.log
+
+# VSCode
+.vscode/
+
+# Otros
+.DS_Store
