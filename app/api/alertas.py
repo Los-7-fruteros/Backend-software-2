@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query, Path
+from fastapi import APIRouter, HTTPException, Query, Path, Depends
+from app.utils.auth_dependency import get_current_user
 from typing import Optional
 from app.models.alertas_model import AlertaInput, AlertaOutput
 from app.services.alertas_service import (
@@ -11,7 +12,11 @@ from app.services.alertas_service import (
 )
 import uuid
 
-router = APIRouter(prefix="/api/alertas", tags=["Alertas"])
+router = APIRouter(
+    prefix="/api/alertas",
+    tags=["Alertas"],
+    dependencies=[Depends(get_current_user)]  # ← protege todo el router
+)
 
 
 # ── Rutas estáticas primero ──────────────────────────

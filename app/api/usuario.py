@@ -15,8 +15,15 @@ from pydantic import BaseModel
 from typing import Dict, Any
 import uuid
 
-router = APIRouter(prefix="/api/usuarios", tags=["Usuarios"])
+# ✅ auth_router sin protección — login y registro son públicos
 auth_router = APIRouter(prefix="/api/auth", tags=["Auth"])
+
+# ✅ usuarios_router protegido
+router = APIRouter(
+    prefix="/api/usuarios",
+    tags=["Usuarios"],
+    dependencies=[Depends(get_current_user)]
+)
 
 
 # ──────────────────────────────────────────

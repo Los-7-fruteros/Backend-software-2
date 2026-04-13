@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Depends
+from app.utils.auth_dependency import get_current_user
 from app.models.umbrales_model import UmbralInput, UmbralOutput
 from app.services.umbrales_service import (
     get_umbrales_by_predio,
@@ -9,7 +10,12 @@ from app.services.umbrales_service import (
 )
 import uuid
 
-router = APIRouter(prefix="/api/umbrales", tags=["Umbrales"])
+router = APIRouter(
+    prefix="/api/umbrales",
+    tags=["Umbrales"],
+    dependencies=[Depends(get_current_user)]  # ← protege todo el router
+)
+
 
 
 # ── Rutas estáticas primero ──────────────────────────

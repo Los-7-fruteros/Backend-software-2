@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query, Path
+from fastapi import APIRouter, HTTPException, Query, Path, Depends
+from app.utils.auth_dependency import get_current_user
 from app.models.predio_model import PredioInput, PredioOutput
 from app.services.predio_service import (
     get_predio_by_id,
@@ -13,7 +14,11 @@ from app.services.predio_service import (
 )
 import uuid
 
-router = APIRouter(prefix="/api/predios", tags=["Predios"])
+router = APIRouter(
+    prefix="/api/predios",
+    tags=["Predios"],
+    dependencies=[Depends(get_current_user)]  # ← protege todo el router
+)
 
 
 # ── Rutas estáticas primero ──────────────────────────
