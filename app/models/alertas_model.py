@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pydantic import field_validator
 from typing import Optional
 from app.utils.validators import validate_no_nan
+from app.utils.sanitizers import sanitizar_string  # ← nuevo
 import uuid
 
 
@@ -24,7 +25,6 @@ class AlertaInput(SQLModel):
     mensaje:   Optional[str]   = None
     sensor_id: uuid.UUID
 
-    # ── Validators de campo ──────────────────────────
     @field_validator("valor", mode="before")
     @classmethod
     def validar_no_nan(cls, v):
@@ -41,10 +41,12 @@ class AlertaInput(SQLModel):
 
     @field_validator("mensaje", mode="before")
     @classmethod
-    def validar_mensaje(cls, v):
-        """Evita mensajes vacíos o solo espacios."""
-        if v is not None and not v.strip():
-            raise ValueError("El mensaje no puede estar vacío")
+    def validar_y_sanitizar_mensaje(cls, v):          # ← renombrado
+        """Evita mensajes vacíos o solo espacios y sanitiza contra XSS."""
+        if v is not None:
+            if not v.strip():
+                raise ValueError("El mensaje no puede estar vacío")
+            return sanitizar_string(v, "mensaje")     # ← sanitización agregada
         return v
 
 
