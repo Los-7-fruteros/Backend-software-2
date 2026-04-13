@@ -4,6 +4,7 @@ from pydantic import field_validator, EmailStr  # ← EmailStr nuevo
 from typing import Optional
 from app.utils.sanitizers import sanitizar_string, sanitizar_email
 import uuid
+import re
 
 
 class Usuario(SQLModel, table=False):
