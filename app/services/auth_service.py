@@ -8,13 +8,16 @@ import jwt
 import os
 
 # ── Configuración JWT ─────────────────────
-SECRET_KEY  = os.getenv("JWT_SECRET_KEY", "cambia-esto-en-produccion")
-ALGORITHM   = "HS256"
+SECRET_KEY         = os.getenv("JWT_SECRET_KEY", "cambia-esto-en-produccion")
+ALGORITHM          = "HS256"
 TOKEN_EXPIRY_HOURS = 24
+
+# ── Campos obligatorios en el payload ────
+REQUIRED_PAYLOAD_FIELDS = {"sub", "rol", "email"}
 
 
 # ──────────────────────────────────────────
-# HELPERS
+# HELPERS PRIVADOS
 # ──────────────────────────────────────────
 
 def _verificar_contrasena(contrasena: str, hash_contrasena: str) -> bool:
@@ -28,20 +31,69 @@ def _verificar_contrasena(contrasena: str, hash_contrasena: str) -> bool:
 def _crear_token(payload: Dict[str, Any]) -> str:
     """Generar JWT firmado con expiración."""
     payload["exp"] = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRY_HOURS)
+    payload["iat"] = datetime.now(timezone.utc)  # ← issued at: cuándo fue emitido
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def _decodificar_token(token: str) -> Dict[str, Any]:
     """
     Decodificar y validar JWT.
-    Lanza 401 si expiró o es inválido.
+    Valida firma, expiración y campos obligatorios del payload.
     """
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
+        logger.warning("🔐 Token expirado rechazado")
+        raise HTTPException(
+            status_code=401,
+            detail="Token expirado. Por favor inicia sesión nuevamente.",
+            headers={"WWW-Authenticate": "Bearer"}  # ← estándar OAuth2
+        )
+    except jwt.InvalidSignatureError:
+        logger.warning("🔐 Token con firma inválida rechazado")
+        raise HTTPException(
+            status_code=401,
+            detail="Token con firma inválida.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    except jwt.DecodeError:
+        logger.warning("🔐 Token malformado rechazado")
+        raise HTTPException(
+            status_code=401,
+            detail="Token malformado.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"🔐 Token inválido: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail="Token inválido.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    # ── Validar campos obligatorios del payload ──
+    campos_faltantes = REQUIRED_PAYLOAD_FIELDS - payload.keys()
+    if campos_faltantes:
+        logger.warning(f"🔐 Token sin campos requeridos: {campos_faltantes}")
+        raise HTTPException(
+            status_code=401,
+            detail=f"Token inválido: faltan campos {campos_faltantes}.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    # ── Validar que sub sea un UUID válido ──
+    import uuid
+    try:
+        uuid.UUID(payload["sub"])
+    except ValueError:
+        logger.warning(f"🔐 Token con sub inválido: {payload['sub']}")
+        raise HTTPException(
+            status_code=401,
+            detail="Token inválido: identificador de usuario malformado.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    return payload
 
 
 # ──────────────────────────────────────────
@@ -51,18 +103,22 @@ def _decodificar_token(token: str) -> Dict[str, Any]:
 def login(email: str, contrasena: str) -> Dict[str, Any]:
     """
     Verificar credenciales y retornar JWT.
-    Lanza 401 si el email no existe o la contraseña no coincide.
+    Mismo mensaje para email y contraseña incorrectos
+    para evitar enumeración de usuarios.
     """
     usuario = get_usuario_by_email(email)
 
-    # Mismo mensaje para email y contraseña incorrectos
-    # evita enumerar usuarios existentes
     if not usuario or not _verificar_contrasena(contrasena, usuario["hash_contrasena"]):
-        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+        logger.warning(f"🔐 Intento de login fallido | email={email}")
+        raise HTTPException(
+            status_code=401,
+            detail="Credenciales inválidas.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
 
     token = _crear_token({
-        "sub":  usuario["id"],
-        "rol":  usuario["rol"],
+        "sub":   usuario["id"],
+        "rol":   usuario["rol"],
         "email": usuario["email"]
     })
 
@@ -70,6 +126,7 @@ def login(email: str, contrasena: str) -> Dict[str, Any]:
     return {
         "access_token": token,
         "token_type":   "bearer",
+        "expires_in":   TOKEN_EXPIRY_HOURS * 3600,  # ← en segundos
         "usuario": {
             "id":     usuario["id"],
             "nombre": usuario["nombre"],
@@ -80,5 +137,5 @@ def login(email: str, contrasena: str) -> Dict[str, Any]:
 
 
 def get_current_usuario(token: str) -> Dict[str, Any]:
-    """Decodificar token y retornar payload del usuario."""
+    """Decodificar token y retornar payload validado."""
     return _decodificar_token(token)
