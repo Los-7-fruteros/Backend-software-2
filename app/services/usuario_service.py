@@ -3,7 +3,6 @@ from app.models.usuario_model import UsuarioInput
 from app.utils.logger import logger
 from fastapi import HTTPException
 from typing import Dict, Any, Optional
-import bcrypt
 import uuid
 
 MAX_LIMIT = 200
@@ -16,7 +15,7 @@ MAX_LIMIT = 200
 def get_usuario_by_id(usuario_id: uuid.UUID) -> Dict[str, Any]:
     """Obtener usuario por ID. Lanza 404 si no existe."""
     response = supabase.table("usuario") \
-        .select("*") \
+        .select("id, rol, email, nombre, num_telefono, created_at") \
         .eq("id", str(usuario_id)) \
         .execute()
 
@@ -29,17 +28,14 @@ def get_usuario_by_id(usuario_id: uuid.UUID) -> Dict[str, Any]:
 def get_usuario_by_email(email: str) -> Optional[Dict[str, Any]]:
     """Obtener usuario por email. Retorna None si no existe."""
     response = supabase.table("usuario") \
-        .select("*") \
+        .select("id, rol, email, nombre, num_telefono, created_at") \
         .eq("email", email) \
         .execute()
 
     return response.data[0] if response.data else None
 
 
-def list_usuarios(
-    limit: int = 50,
-    offset: int = 0
-) -> list:
+def list_usuarios(limit: int = 50, offset: int = 0) -> list:
     """Listar usuarios sin exponer hash_contrasena."""
     limit = min(limit, MAX_LIMIT)
 
@@ -58,27 +54,40 @@ def list_usuarios(
 
 def create_usuario(data: UsuarioInput) -> Dict[str, Any]:
     """
-    Crear usuario hasheando la contraseña.
-    Lanza 409 si el email ya existe.
+    Crea usuario en dos pasos:
+    1. Supabase Auth maneja el hasheo de la contraseña
+    2. Nuestra tabla usuario almacena datos adicionales (rol, nombre, etc.)
     """
     # Verificar email duplicado
     if get_usuario_by_email(data.email):
         raise HTTPException(status_code=409, detail="El email ya está registrado")
 
-    # Hashear contraseña
-    hash_bytes = bcrypt.hashpw(data.contrasena.encode("utf-8"), bcrypt.gensalt())
-    hash_str = hash_bytes.decode("utf-8")
+    # ✅ Paso 1: Supabase Auth crea el usuario y hashea la contraseña
+    try:
+        auth_response = supabase.auth.sign_up({
+            "email":    data.email,
+            "password": data.contrasena
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al crear usuario en Auth: {str(e)}")
 
+    if not auth_response.user:
+        raise HTTPException(status_code=500, detail="Error al registrar usuario en Auth")
+
+    auth_user_id = auth_response.user.id  # UUID asignado por Supabase Auth
+
+    # ✅ Paso 2: Insertar datos adicionales en nuestra tabla usuario
     response = supabase.table("usuario").insert({
-        "rol":             data.rol,
-        "email":           data.email,
-        "hash_contrasena": hash_str,
-        "nombre":          data.nombre,
-        "num_telefono":    data.num_telefono
+        "id":           auth_user_id,   # ← mismo ID que Supabase Auth
+        "rol":          data.rol,
+        "email":        data.email,
+        "nombre":       data.nombre,
+        "num_telefono": data.num_telefono
+        # hash_contrasena ya no se almacena aquí ✅
     }).execute()
 
     if not response.data:
-        raise HTTPException(status_code=500, detail="Error al crear usuario")
+        raise HTTPException(status_code=500, detail="Error al guardar datos del usuario")
 
     logger.info(f"✅ Usuario creado | email={data.email}")
     return response.data[0]
@@ -86,8 +95,8 @@ def create_usuario(data: UsuarioInput) -> Dict[str, Any]:
 
 def update_usuario(usuario_id: uuid.UUID, data: UsuarioInput) -> Dict[str, Any]:
     """
-    Actualizar usuario. Lanza 404 si no existe.
-    Rehashea la contraseña si se envía una nueva.
+    Actualiza datos del usuario.
+    Si se envía nueva contraseña la actualiza en Supabase Auth.
     """
     get_usuario_by_id(usuario_id)  # lanza 404 si no existe
 
@@ -96,16 +105,23 @@ def update_usuario(usuario_id: uuid.UUID, data: UsuarioInput) -> Dict[str, Any]:
     if existente and existente["id"] != str(usuario_id):
         raise HTTPException(status_code=409, detail="El email ya está en uso")
 
-    hash_bytes = bcrypt.hashpw(data.contrasena.encode("utf-8"), bcrypt.gensalt())
-    hash_str = hash_bytes.decode("utf-8")
+    # ✅ Actualizar contraseña en Supabase Auth si se envió una nueva
+    if data.contrasena:
+        try:
+            supabase.auth.admin.update_user_by_id(
+                str(usuario_id),
+                {"password": data.contrasena}
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error al actualizar contraseña: {str(e)}")
 
+    # Actualizar datos adicionales en nuestra tabla
     response = supabase.table("usuario") \
         .update({
-            "rol":             data.rol,
-            "email":           data.email,
-            "hash_contrasena": hash_str,
-            "nombre":          data.nombre,
-            "num_telefono":    data.num_telefono
+            "rol":          data.rol,
+            "email":        data.email,
+            "nombre":       data.nombre,
+            "num_telefono": data.num_telefono
         }) \
         .eq("id", str(usuario_id)) \
         .execute()
@@ -118,9 +134,18 @@ def update_usuario(usuario_id: uuid.UUID, data: UsuarioInput) -> Dict[str, Any]:
 
 
 def delete_usuario(usuario_id: uuid.UUID) -> Dict[str, Any]:
-    """Eliminar usuario. Lanza 404 si no existe."""
+    """
+    Elimina usuario de nuestra tabla Y de Supabase Auth.
+    """
     get_usuario_by_id(usuario_id)  # lanza 404 si no existe
 
+    # ✅ Eliminar de Supabase Auth
+    try:
+        supabase.auth.admin.delete_user(str(usuario_id))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar usuario en Auth: {str(e)}")
+
+    # Eliminar de nuestra tabla
     response = supabase.table("usuario") \
         .delete() \
         .eq("id", str(usuario_id)) \

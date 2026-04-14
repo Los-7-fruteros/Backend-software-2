@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field
 from datetime import datetime, timezone
-from pydantic import field_validator, EmailStr  # ← EmailStr nuevo
+from pydantic import field_validator
 from typing import Optional
 from app.utils.sanitizers import sanitizar_string, sanitizar_email
 import uuid
@@ -11,7 +11,7 @@ class Usuario(SQLModel, table=False):
     id:              uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     rol:             str
     email:           str
-    hash_contrasena: str
+    hash_contrasena: Optional[str] = None  # ← Optional: Supabase Auth lo gestiona
     nombre:          str
     num_telefono:    Optional[str] = None
     created_at:      datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -38,7 +38,6 @@ class UsuarioInput(SQLModel):
     @classmethod
     def sanitizar_telefono(cls, v):
         if v is not None:
-            # Solo permitir números, +, - y espacios
             if not re.match(r"^[\d\s\+\-]{7,15}$", v):
                 raise ValueError("Formato de teléfono inválido")
         return v
@@ -51,3 +50,4 @@ class UsuarioOutput(SQLModel):
     nombre:       str
     num_telefono: Optional[str]
     created_at:   datetime
+    # hash_contrasena ausente intencionalmente ✅
