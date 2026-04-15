@@ -38,11 +38,18 @@ class LoginInput(BaseModel):
 @auth_router.post("/login")
 def login_endpoint(data: LoginInput):
     """🔐 Login — retorna JWT"""
+    print(f"DEBUG: Login attempt for {data.email}")
     try:
-        return login(data.email, data.contrasena)
-    except HTTPException:
+        result = login(data.email, data.contrasena)
+        print(f"DEBUG: Login success for {data.email}")
+        return result
+    except HTTPException as e:
+        print(f"DEBUG: HTTP exception: {e.detail}")
         raise
     except Exception as e:
+        print(f"DEBUG: Unexpected error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error en login: {str(e)}")
 
 
