@@ -9,12 +9,6 @@ from app.api.sensores import router as sensores_router
 from app.api.telemetry import router as telemetry_router
 from app.api.umbrales import router as umbrales_router
 from app.api.usuario import auth_router, router as usuarios_router
-from app.utils.middlewares import (          # ← nuevo
-    RequestLoggingMiddleware,
-    SecurityHeadersMiddleware,
-    RateLimitMiddleware,
-    RequestSizeLimitMiddleware
-)
 
 
 @asynccontextmanager
@@ -32,11 +26,6 @@ app = FastAPI(
 )
 
 # ── Middlewares ────────────────────────────────────────
-# IMPORTANTE: se ejecutan en orden inverso al que se agregan
-app.add_middleware(RequestLoggingMiddleware)     # 4° — trazabilidad de requests
-app.add_middleware(SecurityHeadersMiddleware)    # 3° — headers de seguridad
-app.add_middleware(RateLimitMiddleware)          # 2° — protección fuerza bruta/DoS
-app.add_middleware(RequestSizeLimitMiddleware)   # 1° — límite tamaño de payload
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
