@@ -35,6 +35,12 @@ class LoginInput(BaseModel):
     contrasena: str
 
 
+@auth_router.get("/health")
+def auth_health():
+    """Test endpoint"""
+    return {"status": "ok", "auth_service": "running"}
+
+
 @auth_router.post("/login")
 def login_endpoint(data: LoginInput):
     """🔐 Login — retorna JWT"""
