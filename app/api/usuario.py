@@ -41,6 +41,12 @@ def auth_health():
     return {"status": "ok", "auth_service": "running"}
 
 
+@auth_router.post("/test-login")
+def test_login():
+    """Test login endpoint"""
+    return {"message": "Backend is working", "test": "success"}
+
+
 @auth_router.post("/login")
 def login_endpoint(data: LoginInput):
     """🔐 Login — retorna JWT"""
